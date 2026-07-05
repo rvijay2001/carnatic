@@ -47,3 +47,16 @@ export function ratioToCents([num, den]: [number, number]): number {
 export function srutiLabel(sruti: Sruti): string {
   return `${sruti.note}${sruti.octave} · ${KATTAI[sruti.note]} kattai`;
 }
+
+/**
+ * Sthayi (register) name for an octave offset relative to the singer's
+ * madhya-sthayi Sa (= the sruti). Traditional notation: one dot below a swara
+ * for mandra, one dot above for tara, two for anumandra/atitara.
+ */
+export function sthayiName(octaveOffset: number): string {
+  if (octaveOffset <= -2) return 'anumandra sthayi';
+  if (octaveOffset === -1) return 'mandra sthayi';
+  if (octaveOffset === 0) return 'madhya sthayi';
+  if (octaveOffset === 1) return 'tara sthayi';
+  return 'atitara sthayi';
+}

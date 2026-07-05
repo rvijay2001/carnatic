@@ -2,6 +2,7 @@
   import { mayamalavagowla } from '../data/ragas';
   import { settings } from '../lib/settings';
   import { nearestSwara, type SwaraReading } from '../lib/tuner';
+  import { sthayiName } from '../lib/pitch';
   import { startMic, type MicSession } from '../audio/mic';
 
   const CLARITY_GATE = 0.9;
@@ -76,6 +77,7 @@
         <div class="swara-name {centsQuality}">
           {reading.label}<span class="octave">{octaveMark}</span>
         </div>
+        <div class="sthayi">{sthayiName(reading.octaveOffset)}</div>
         <div class="meter" aria-label="Cents deviation">
           <div class="scale">
             <span>-50¢</span><span>0</span><span>+50¢</span>
@@ -152,6 +154,12 @@
   .swara-name .octave {
     font-size: 2rem;
     vertical-align: super;
+  }
+
+  .sthayi {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: -0.5rem;
   }
 
   .good { color: #57c26d; }

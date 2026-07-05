@@ -6,6 +6,14 @@
   import Tuner from './ui/Tuner.svelte';
 
   const OCTAVES = [1, 2, 3, 4];
+  // The picker places YOUR madhya-sthayi Sa; sthayi names themselves are
+  // relative to it, so absolute octaves only get practical hints.
+  const OCTAVE_HINTS: Record<number, string> = {
+    1: ' · very low',
+    2: ' · typical male voice',
+    3: ' · typical female voice',
+    4: ' · very high',
+  };
 
   // In-app navigation only — never URL/hash routing (iOS PWAs re-prompt for
   // mic permission when the URL hash changes; see ARCHITECTURE.md).
@@ -46,7 +54,7 @@
       </select>
     </label>
     <label>
-      <span>Octave</span>
+      <span>Madhya Sa</span>
       <select
         value={$settings.sruti.octave}
         onchange={(e) =>
@@ -56,7 +64,7 @@
           }))}
       >
         {#each OCTAVES as o}
-          <option value={o}>{o}</option>
+          <option value={o}>{$settings.sruti.note}{o}{OCTAVE_HINTS[o] ?? ''}</option>
         {/each}
       </select>
     </label>

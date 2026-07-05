@@ -64,6 +64,18 @@ describe('just intonation — Mayamalavagowla', () => {
   });
 });
 
+describe('sthayi names (relative to madhya Sa)', () => {
+  it('maps octave offsets to the five traditional sthayis', async () => {
+    const { sthayiName } = await import('./pitch');
+    expect(sthayiName(0)).toBe('madhya sthayi');
+    expect(sthayiName(1)).toBe('tara sthayi');
+    expect(sthayiName(-1)).toBe('mandra sthayi');
+    expect(sthayiName(2)).toBe('atitara sthayi');
+    expect(sthayiName(-2)).toBe('anumandra sthayi');
+    expect(sthayiName(-3)).toBe('anumandra sthayi');
+  });
+});
+
 describe('kattai labels', () => {
   it('maps the traditional numbering', () => {
     expect(KATTAI['C']).toBe('1');
