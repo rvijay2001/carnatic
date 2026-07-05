@@ -6,13 +6,15 @@
   import { startMic, type MicSession } from '../audio/mic';
   import PitchTrace from './PitchTrace.svelte';
 
-  // Gates are deliberately gentle: beginner singing is soft, and the median
-  // + EMA smoothing below absorbs the extra noise the lower gates admit.
-  // Hysteresis: entering voicing is stricter than staying in it, so soft
-  // onsets register quickly (Mac-at-a-distance) without mid-note dropouts.
+  // Voicing is decided by CLARITY, not loudness: macOS Safari ignores
+  // autoGainControl:false and ramps mic gain up over the first seconds
+  // (~12 dB, measured on-device 2026-07), so any tight absolute-level gate
+  // silently swallows the start of every phrase on the Mac. The level gate
+  // is only a floor against a silent room.
+  // Hysteresis: entering voicing is stricter than staying in it.
   const CLARITY_ENTER = 0.8;
   const CLARITY_STAY = 0.7;
-  const RMS_GATE = 0.003;
+  const RMS_GATE = 0.0005;
   const HZ_MIN = 55;
   const HZ_MAX = 1400;
   /** Silence that ends a phrase and reveals its trace. */

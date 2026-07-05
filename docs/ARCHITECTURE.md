@@ -50,6 +50,10 @@ code:
 2. **Disable OS voice processing on capture.** Every `getUserMedia` call MUST request
    `{ echoCancellation: false, noiseSuppression: false, autoGainControl: false }`.
    These are tuned for phone calls and can gate or distort soft singing.
+   KNOWN LIMIT (measured on-device 2026-07): macOS Safari ignores
+   `autoGainControl: false` — input gain ramps up ~12 dB over the first seconds of
+   capture. Consequence: voicing decisions must be based on pitch CLARITY, never on a
+   tight absolute level threshold; keep any RMS gate as a bare noise floor (~0.0005).
 3. **Never hardcode a sample rate.** iPhone typically captures at 48 kHz, Macs often
    44.1 kHz. All frequency math MUST read `audioContext.sampleRate` at runtime.
 4. **Schedule on the audio clock only.** All ticks and swara onsets are
