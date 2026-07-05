@@ -66,7 +66,11 @@ code:
    pitch-feedback exercises; latency is large and variable.
 8. **iOS specifics.** AudioContext must be created/resumed inside a user gesture. Mic
    permission may re-prompt per session; `deviceId`s are not stable across loads — never
-   persist them.
+   persist them. The ring/silent hardware switch mutes Web Audio (confirmed on device,
+   2026-07): declare `navigator.audioSession.type = 'playback'` before creating the
+   context, and play a silent buffer inside the first gesture to complete the unlock.
+   Also resume the context whenever it is 'suspended'/'interrupted' (calls, Siri, app
+   switches).
 9. **Calibration screen as acceptance test.** The tuner screen shows live detected
    pitch. Cross-device check: play Sa on the Mac, point the iPhone at it (and vice
    versa) — both must agree within a few cents. Any disagreement is a bug, not a
