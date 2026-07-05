@@ -100,7 +100,13 @@ export async function startMic(
   const analyser = activeCtx.createAnalyser();
   analyser.fftSize = FFT_SIZE;
   source.connect(analyser);
-  // Not connected to destination: we listen, we don't monitor.
+  // WebKit pulls a graph from its destination — a dangling analyser can be
+  // starved of data for seconds on iOS. Terminate through a muted gain so
+  // the graph renders immediately (we still don't monitor the mic audibly).
+  const mutedSink = activeCtx.createGain();
+  mutedSink.gain.value = 0;
+  analyser.connect(mutedSink);
+  mutedSink.connect(activeCtx.destination);
 
   const detector = PitchDetector.forFloat32Array(analyser.fftSize);
   const buffer = new Float32Array(analyser.fftSize);
@@ -118,6 +124,7 @@ export async function startMic(
     stop() {
       clearInterval(timer);
       source.disconnect();
+      mutedSink.disconnect();
       for (const t of stream.getTracks()) t.stop();
       if (ownsContext) void activeCtx.close().catch(() => {});
       setAudioSessionType('playback');

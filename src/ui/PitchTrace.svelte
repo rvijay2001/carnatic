@@ -86,6 +86,23 @@
 
 <svg viewBox="0 0 {W} {H}" class="trace" role="img" aria-label="Pitch over time">
   {#each gridlines as line (line.cents)}
+    <!-- Guard bands: orange within ±25¢, green within ±10¢ of the target. -->
+    <rect
+      x={PAD_L}
+      y={y(line.cents + 25)}
+      width={W - PAD_L - 4}
+      height={y(line.cents - 25) - y(line.cents + 25)}
+      class="band near"
+    />
+    <rect
+      x={PAD_L}
+      y={y(line.cents + 10)}
+      width={W - PAD_L - 4}
+      height={y(line.cents - 10) - y(line.cents + 10)}
+      class="band good"
+    />
+  {/each}
+  {#each gridlines as line (line.cents)}
     <line
       x1={PAD_L}
       y1={y(line.cents)}
@@ -106,6 +123,16 @@
     width: 100%;
     height: auto;
     display: block;
+  }
+
+  .band.near {
+    fill: #e0a458;
+    opacity: 0.14;
+  }
+
+  .band.good {
+    fill: #57c26d;
+    opacity: 0.2;
   }
 
   .grid {

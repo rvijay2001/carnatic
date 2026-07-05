@@ -24,7 +24,6 @@
   let session: MicSession | null = $state(null);
   let starting = $state(false);
   let micError = $state('');
-  let diagText = $state('');
 
   let points: Point[] = $state([]);
   let lastPhrase: Point[] | null = $state(null);
@@ -40,10 +39,8 @@
   let phraseActive = false;
   let phraseStartMs = 0;
   let lastVoicedMs = 0;
-  let lastAudioAt = 0;
   let medianWindow: number[] = [];
   let ema: number | null = null;
-  let watchdog: ReturnType<typeof setInterval> | undefined;
 
   function median(values: number[]): number {
     const sorted = [...values].sort((a, b) => a - b);
@@ -58,11 +55,16 @@
     while (end > 0 && points[end - 1].c === null) end--;
     lastPhrase = points.slice(0, end);
     points = [];
+    // One phrase per listen: release the mic as soon as the pause is
+    // detected so the button state and the OS mic indicator follow suit.
+    if (session) {
+      session.stop();
+      session = null;
+    }
   }
 
   function onSample(sample: { hz: number; clarity: number; rms: number }) {
     const now = performance.now();
-    if (sample.rms > 0.0005) lastAudioAt = now;
     level = sample.rms;
 
     const voiced =
@@ -113,39 +115,19 @@
     }
   }
 
-  function stopWatchdog() {
-    if (watchdog) clearInterval(watchdog);
-    watchdog = undefined;
-    diagText = '';
-  }
-
   async function toggle() {
     if (session) {
-      session.stop();
+      const s = session;
       session = null;
+      s.stop();
       endPhrase();
       singing = false;
-      stopWatchdog();
       return;
     }
     starting = true;
     micError = '';
     try {
       session = await startMic(onSample);
-      // Silence watchdog: mic on but no signal at all → show diagnostics.
-      lastAudioAt = performance.now();
-      watchdog = setInterval(() => {
-        if (!session) return;
-        if (performance.now() - lastAudioAt > 3000) {
-          const d = session.diag();
-          diagText =
-            `No audio reaching the app. engine ${d.contextHz} Hz · ` +
-            `mic ${d.trackHz ?? '?'} Hz · track ${d.trackState}` +
-            `${d.trackMuted ? ' · MUTED by OS' : ''} · build ${__BUILD_TIME__}`;
-        } else {
-          diagText = '';
-        }
-      }, 1000);
     } catch (err) {
       micError =
         err instanceof DOMException && err.name === 'NotAllowedError'
@@ -163,23 +145,18 @@
 <section class="tuner" aria-label="Tuner">
   {#if session}
     <div class="display">
-      {#if showLive && (points.length > 0 || lastPhrase)}
-        <PitchTrace
-          points={points.length > 0 ? points : (lastPhrase ?? [])}
-          raga={mayamalavagowla}
-          live={points.length > 0}
-        />
-        <p class="caption">{points.length > 0 ? 'Live' : 'Your last phrase'}</p>
-      {:else if singing}
-        <div class="pulse-wrap" aria-label="Hearing you">
-          <div class="pulse" style="transform: scale({0.5 + pulseScale})"></div>
-        </div>
-        <p class="caption">Hearing you — sing on, the trace appears when you pause</p>
-      {:else if lastPhrase}
-        <PitchTrace points={lastPhrase} raga={mayamalavagowla} />
-        <p class="caption">Your last phrase — how you held and moved between swaras</p>
+      {#if showLive && points.length > 0}
+        <PitchTrace points={points} raga={mayamalavagowla} live={true} />
+        <p class="caption">Live</p>
       {:else}
-        <p class="listening">Listening… sing a swara</p>
+        <div class="pulse-wrap" aria-label="Microphone level">
+          <div class="pulse" style="transform: scale({0.35 + pulseScale})"></div>
+        </div>
+        <p class="caption">
+          {singing
+            ? 'Hearing you — the trace appears when you pause'
+            : 'Listening — sing a swara'}
+        </p>
       {/if}
 
       {#if $settings.tunerNumbers && lastReading}
@@ -204,9 +181,6 @@
 
   {#if micError}
     <p class="error">{micError}</p>
-  {/if}
-  {#if diagText}
-    <p class="error">{diagText}</p>
   {/if}
 
   <button class="mic-toggle" onclick={toggle} disabled={starting}>
@@ -294,12 +268,6 @@
     color: var(--text);
     font-size: 0.95rem;
     font-variant-numeric: tabular-nums;
-  }
-
-  .listening {
-    color: var(--muted);
-    font-size: 1rem;
-    margin: 0;
   }
 
   .explain {

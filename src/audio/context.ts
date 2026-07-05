@@ -119,7 +119,9 @@ function waitForRunning(c: AudioContext, timeoutMs: number): Promise<boolean> {
  */
 export async function ensureRunningContext(): Promise<AudioContext> {
   const first = getAudioContext();
-  if (await waitForRunning(first, 300)) return first;
+  // Give iOS a real chance to activate the route — rebuilding too eagerly
+  // costs more time than waiting (route activation can take ~1 s).
+  if (await waitForRunning(first, 1000)) return first;
 
   // Stuck — rebuild. Cheap for us: the audio graph is per-note.
   try {
