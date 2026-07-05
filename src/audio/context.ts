@@ -8,6 +8,9 @@
  *   is declared as "playback" (media), so we set navigator.audioSession.type.
  * - A silent buffer is played on first unlock; iOS fully unlocks audio output
  *   only after something has actually been played inside a gesture.
+ * - Another app taking the audio session leaves the context 'interrupted';
+ *   resume() can wedge there, so ensureRunningContext() rebuilds a stuck
+ *   context instead of requiring an app restart.
  */
 
 declare global {
@@ -32,6 +35,16 @@ function declarePlaybackSession(): void {
 // Declare as early as possible, before any context exists.
 declarePlaybackSession();
 
+// Recover pre-emptively when returning from another app.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && ctx && ctx.state !== 'running') {
+      void ctx.resume().catch(() => {});
+    }
+  });
+}
+
+/** Synchronous create + resume attempt. MUST be called inside a user gesture. */
 export function getAudioContext(): AudioContext {
   if (!ctx) {
     declarePlaybackSession();
@@ -43,10 +56,49 @@ export function getAudioContext(): AudioContext {
     source.connect(ctx.destination);
     source.start(0);
   }
-  // iOS can leave the context 'suspended' or 'interrupted' (after calls,
-  // Siri, app switches) — always try to resume from within the gesture.
   if (ctx.state !== 'running') {
-    void ctx.resume();
+    void ctx.resume().catch(() => {});
   }
   return ctx;
+}
+
+function waitForRunning(c: AudioContext, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (c.state === 'running') return resolve(true);
+    const timer = setTimeout(() => {
+      c.removeEventListener('statechange', onChange);
+      resolve(c.state === ('running' as AudioContextState));
+    }, timeoutMs);
+    const onChange = () => {
+      if (c.state === 'running') {
+        clearTimeout(timer);
+        c.removeEventListener('statechange', onChange);
+        resolve(true);
+      }
+    };
+    c.addEventListener('statechange', onChange);
+    void c.resume().catch(() => {});
+  });
+}
+
+/**
+ * Resolve with a RUNNING context. Call synchronously from a gesture handler
+ * (the synchronous part performs the gesture-bound creation/unlock); if the
+ * existing context is wedged in 'interrupted'/'suspended' (e.g. after an
+ * external app took the audio session), it is closed and rebuilt.
+ */
+export async function ensureRunningContext(): Promise<AudioContext> {
+  const first = getAudioContext();
+  if (await waitForRunning(first, 300)) return first;
+
+  // Stuck — rebuild. Cheap for us: the audio graph is per-note.
+  try {
+    await first.close();
+  } catch {
+    // Already closed or closing; ignore.
+  }
+  if (ctx === first) ctx = null;
+  const rebuilt = getAudioContext();
+  await waitForRunning(rebuilt, 700);
+  return rebuilt;
 }
