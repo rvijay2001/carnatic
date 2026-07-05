@@ -17,8 +17,11 @@
   const RMS_GATE = 0.0005;
   const HZ_MIN = 55;
   const HZ_MAX = 1400;
-  /** Silence that ends a phrase and reveals its trace. */
-  const PHRASE_END_MS = 1000;
+  /**
+   * Silence that ends a phrase and reveals its trace. Must sit comfortably
+   * above a breath (0.5–1.5 s), or catching a breath kills the take.
+   */
+  const PHRASE_END_MS = 2500;
   const MAX_POINTS = 600; // ~30 s at 50 ms/sample
 
   interface Point {
@@ -33,6 +36,8 @@
   let points: Point[] = $state([]);
   let lastPhrase: Point[] | null = $state(null);
   let singing = $state(false);
+  /** Phrase is alive (survives breath gaps) — drives the caption. */
+  let phraseOn = $state(false);
   let level = $state(0);
   let lastReading: {
     label: string;
@@ -56,6 +61,7 @@
   function endPhrase() {
     if (!phraseActive) return;
     phraseActive = false;
+    phraseOn = false;
     singing = false;
     let end = points.length;
     while (end > 0 && points[end - 1].c === null) end--;
@@ -83,6 +89,7 @@
     if (voiced) {
       if (!phraseActive) {
         phraseActive = true;
+        phraseOn = true;
         phraseStartMs = now;
         medianWindow = [];
         ema = null;
@@ -160,8 +167,8 @@
           <div class="pulse" style="transform: scale({0.35 + pulseScale})"></div>
         </div>
         <p class="caption">
-          {singing
-            ? 'Hearing you — the trace appears when you pause'
+          {phraseOn
+            ? 'Hearing you — breathe freely; pause a bit longer to finish'
             : 'Listening — sing a swara'}
         </p>
       {/if}
