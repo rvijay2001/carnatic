@@ -38,7 +38,7 @@
     cents: number;
     hz: number;
   } | null = $state(null);
-  let lastClarity = $state(0);
+  let lastRaw = $state({ hz: 0, clarity: 0, rms: 0 });
 
   let phraseActive = false;
   let phraseStartMs = 0;
@@ -71,7 +71,7 @@
     const now = performance.now();
     level = sample.rms;
 
-    lastClarity = sample.clarity;
+    lastRaw = sample;
     const voiced =
       sample.clarity >= (singing ? CLARITY_STAY : CLARITY_ENTER) &&
       sample.rms >= RMS_GATE &&
@@ -164,12 +164,20 @@
         </p>
       {/if}
 
-      {#if $settings.tunerNumbers && lastReading}
+      {#if $settings.tunerNumbers}
+        <!-- Raw gate inputs, shown continuously — the diagnostic view of
+             exactly what the voicing gate accepts or rejects. -->
         <p class="numbers">
-          {lastReading.label} · {lastReading.sthayi} ·
-          {lastReading.cents >= 0 ? '+' : ''}{lastReading.cents.toFixed(0)}¢ ·
-          {lastReading.hz.toFixed(1)} Hz · clarity {(lastClarity * 100).toFixed(0)}%
+          raw {lastRaw.hz > 0 && lastRaw.hz < 10000 ? lastRaw.hz.toFixed(1) : '—'} Hz ·
+          clarity {(lastRaw.clarity * 100).toFixed(0)}% ·
+          level {(lastRaw.rms * 1000).toFixed(1)}
         </p>
+        {#if lastReading}
+          <p class="numbers">
+            {lastReading.label} · {lastReading.sthayi} ·
+            {lastReading.cents >= 0 ? '+' : ''}{lastReading.cents.toFixed(0)}¢
+          </p>
+        {/if}
       {/if}
     </div>
   {:else if lastPhrase}
