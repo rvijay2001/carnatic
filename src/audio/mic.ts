@@ -10,7 +10,7 @@
  */
 
 import { PitchDetector } from 'pitchy';
-import { ensureRunningContext } from './context';
+import { ensureRunningContext, setAudioSessionType } from './context';
 
 export interface PitchSample {
   /** Detected fundamental in Hz (unfiltered — check clarity). */
@@ -31,14 +31,22 @@ const POLL_MS = 50;
 export async function startMic(
   onSample: (sample: PitchSample) => void,
 ): Promise<MicSession> {
+  // Capture is incompatible with the 'playback' session category.
+  setAudioSessionType('play-and-record');
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
+  } catch (err) {
+    setAudioSessionType('playback');
+    throw err;
+  }
   const ctx = await ensureRunningContext();
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    },
-  });
 
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
@@ -63,6 +71,7 @@ export async function startMic(
       clearInterval(timer);
       source.disconnect();
       for (const track of stream.getTracks()) track.stop();
+      setAudioSessionType('playback');
     },
   };
 }

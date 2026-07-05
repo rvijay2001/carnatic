@@ -74,7 +74,10 @@ code:
    2026-07): declare `navigator.audioSession.type = 'playback'` before creating the
    context, and play a silent buffer inside the first gesture to complete the unlock.
    Also resume the context whenever it is 'suspended'/'interrupted' (calls, Siri, app
-   switches). Two more, confirmed on device 2026-07: (a) the first gesture's audio can
+   switches). The 'playback' session category is OUTPUT-ONLY: getUserMedia fails under
+   it with "AudioSession category is not compatible with audio capture" (seen on both
+   iOS and macOS Safari) — switch to 'play-and-record' for the duration of capture,
+   then restore 'playback'. Two more, confirmed on device 2026-07: (a) the first gesture's audio can
    be missed while the hardware warms up — notes must wait for a running context and
    have a minimum audible duration; (b) an external audio app (e.g. tanpura) taking
    the session wedges the context in 'interrupted' where resume() never completes —

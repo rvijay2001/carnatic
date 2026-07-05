@@ -21,15 +21,24 @@ declare global {
 
 let ctx: AudioContext | null = null;
 
-function declarePlaybackSession(): void {
+/**
+ * 'playback' plays through the iOS silent switch but is output-only —
+ * getUserMedia fails under it ("AudioSession category is not compatible
+ * with audio capture"). Switch to 'play-and-record' while the mic is on,
+ * back to 'playback' when it stops.
+ */
+export function setAudioSessionType(type: 'playback' | 'play-and-record'): void {
   try {
     if (navigator.audioSession) {
-      navigator.audioSession.type = 'playback';
+      navigator.audioSession.type = type;
     }
   } catch {
-    // Older iOS without the Audio Session API — the silent switch will
-    // unfortunately mute the app there.
+    // Older platforms without the Audio Session API.
   }
+}
+
+function declarePlaybackSession(): void {
+  setAudioSessionType('playback');
 }
 
 // Declare as early as possible, before any context exists.
