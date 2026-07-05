@@ -53,7 +53,7 @@
       micError =
         err instanceof DOMException && err.name === 'NotAllowedError'
           ? 'Microphone access was denied. Allow it in Settings and try again.'
-          : `Could not start the microphone: ${err instanceof Error ? err.message : err}`;
+          : `Could not start the microphone: ${err instanceof Error ? err.message : err} (build ${__BUILD_TIME__})`;
     } finally {
       starting = false;
     }

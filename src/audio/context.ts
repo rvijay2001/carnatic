@@ -27,7 +27,10 @@ let ctx: AudioContext | null = null;
  * with audio capture"). Switch to 'play-and-record' while the mic is on,
  * back to 'playback' when it stops.
  */
+let currentSessionType: 'playback' | 'play-and-record' = 'playback';
+
 export function setAudioSessionType(type: 'playback' | 'play-and-record'): void {
+  currentSessionType = type;
   try {
     if (navigator.audioSession) {
       navigator.audioSession.type = type;
@@ -37,8 +40,26 @@ export function setAudioSessionType(type: 'playback' | 'play-and-record'): void 
   }
 }
 
+/** Re-assert the CURRENT type (not blindly 'playback' — capture may be on). */
 function declarePlaybackSession(): void {
-  setAudioSessionType('playback');
+  setAudioSessionType(currentSessionType);
+}
+
+/**
+ * Close the shared context so no audio session is active — used before
+ * switching the session category for capture, since a category set while a
+ * session is already active may not be applied.
+ */
+export async function closeAudioContext(): Promise<void> {
+  const old = ctx;
+  ctx = null;
+  if (old && old.state !== 'closed') {
+    try {
+      await old.close();
+    } catch {
+      // Already closing; ignore.
+    }
+  }
 }
 
 // Declare as early as possible, before any context exists.

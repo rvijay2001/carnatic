@@ -6,13 +6,13 @@
   import Tuner from './ui/Tuner.svelte';
 
   const OCTAVES = [1, 2, 3, 4];
-  // The picker places YOUR madhya-sthayi Sa; sthayi names themselves are
-  // relative to it, so absolute octaves only get practical hints.
-  const OCTAVE_HINTS: Record<number, string> = {
-    1: ' · very low',
-    2: ' · typical male voice',
-    3: ' · typical female voice',
-    4: ' · very high',
+  // Sthayi labels anchored to the owner's voice: A#2 is his madhya-sthayi Sa
+  // (user decision 2026-07), so octave 2 = Madhya.
+  const OCTAVE_LABELS: Record<number, string> = {
+    1: 'Mandra Sthayi',
+    2: 'Madhya Sthayi',
+    3: 'Tara Sthayi',
+    4: 'Atitara Sthayi',
   };
 
   // In-app navigation only — never URL/hash routing (iOS PWAs re-prompt for
@@ -54,7 +54,7 @@
       </select>
     </label>
     <label>
-      <span>Madhya Sa</span>
+      <span>Octave</span>
       <select
         value={$settings.sruti.octave}
         onchange={(e) =>
@@ -64,7 +64,7 @@
           }))}
       >
         {#each OCTAVES as o}
-          <option value={o}>{$settings.sruti.note}{o}{OCTAVE_HINTS[o] ?? ''}</option>
+          <option value={o}>{$settings.sruti.note}{o} · {OCTAVE_LABELS[o]}</option>
         {/each}
       </select>
     </label>
@@ -95,7 +95,9 @@
   main {
     max-width: 30rem;
     margin: 0 auto;
-    padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+    /* Top inset keeps the header below the iPhone status bar / notch. */
+    padding: calc(0.75rem + env(safe-area-inset-top)) 1rem
+      calc(1.5rem + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     gap: 1rem;

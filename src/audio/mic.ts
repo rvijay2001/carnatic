@@ -10,7 +10,11 @@
  */
 
 import { PitchDetector } from 'pitchy';
-import { ensureRunningContext, setAudioSessionType } from './context';
+import {
+  closeAudioContext,
+  ensureRunningContext,
+  setAudioSessionType,
+} from './context';
 
 export interface PitchSample {
   /** Detected fundamental in Hz (unfiltered — check clarity). */
@@ -31,7 +35,10 @@ const POLL_MS = 50;
 export async function startMic(
   onSample: (sample: PitchSample) => void,
 ): Promise<MicSession> {
-  // Capture is incompatible with the 'playback' session category.
+  // Capture is incompatible with the 'playback' session category, and a
+  // category change may not apply while a session is active — tear the
+  // context down first; it is recreated below under the new category.
+  await closeAudioContext();
   setAudioSessionType('play-and-record');
   let stream: MediaStream;
   try {
