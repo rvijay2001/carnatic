@@ -37,9 +37,16 @@ export async function startMic(
 ): Promise<MicSession> {
   // Capture is incompatible with the 'playback' session category, and a
   // category change may not apply while a session is active — tear the
-  // context down first; it is recreated below under the new category.
+  // context down first, then recreate it under the new category.
+  //
+  // ORDER MATTERS (iOS): the context must be created and resumed inside the
+  // caller's tap gesture BEFORE awaiting getUserMedia — the permission
+  // dialog consumes the user-activation window, and a context created after
+  // it stays suspended (mic "listens" but nothing happens).
   await closeAudioContext();
   setAudioSessionType('play-and-record');
+  const ctx = await ensureRunningContext();
+
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -53,7 +60,18 @@ export async function startMic(
     setAudioSessionType('playback');
     throw err;
   }
-  const ctx = await ensureRunningContext();
+
+  // The permission dialog may have suspended/interrupted the context.
+  if (ctx.state !== 'running') {
+    await ctx.resume().catch(() => {});
+  }
+  if (ctx.state !== 'running') {
+    for (const track of stream.getTracks()) track.stop();
+    setAudioSessionType('playback');
+    throw new Error(
+      `audio engine is '${ctx.state}' after mic permission — tap Start listening again`,
+    );
+  }
 
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();

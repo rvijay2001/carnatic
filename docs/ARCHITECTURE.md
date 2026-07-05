@@ -77,7 +77,11 @@ code:
    switches). The 'playback' session category is OUTPUT-ONLY: getUserMedia fails under
    it with "AudioSession category is not compatible with audio capture" (seen on both
    iOS and macOS Safari) — switch to 'play-and-record' for the duration of capture,
-   then restore 'playback'. Two more, confirmed on device 2026-07: (a) the first gesture's audio can
+   then restore 'playback'. When starting capture, create/resume the AudioContext
+   inside the tap gesture BEFORE awaiting getUserMedia: the permission dialog consumes
+   the user-activation window, and a context created after it stays suspended (mic
+   appears to listen but produces nothing — seen on iPhone 2026-07; macOS is lenient).
+   Two more, confirmed on device 2026-07: (a) the first gesture's audio can
    be missed while the hardware warms up — notes must wait for a running context and
    have a minimum audible duration; (b) an external audio app (e.g. tanpura) taking
    the session wedges the context in 'interrupted' where resume() never completes —
