@@ -18,18 +18,29 @@
   let reading: SwaraReading | null = $state(null);
   let smoothedCents = $state(0);
   let lastVoicedAt = 0;
+  let diagText = $state('');
+  let lastAudioAt = 0;
+  let watchdog: ReturnType<typeof setInterval> | undefined;
+
+  function stopWatchdog() {
+    if (watchdog) clearInterval(watchdog);
+    watchdog = undefined;
+    diagText = '';
+  }
 
   async function toggle() {
     if (session) {
       session.stop();
       session = null;
       reading = null;
+      stopWatchdog();
       return;
     }
     starting = true;
     micError = '';
     try {
       session = await startMic((sample) => {
+        if (sample.rms > 0.0005) lastAudioAt = performance.now();
         const voiced =
           sample.clarity >= CLARITY_GATE &&
           sample.rms >= RMS_GATE &&
@@ -49,6 +60,20 @@
           reading = null;
         }
       });
+      // Silence watchdog: mic on but no signal at all → show diagnostics.
+      lastAudioAt = performance.now();
+      watchdog = setInterval(() => {
+        if (!session) return;
+        if (performance.now() - lastAudioAt > 3000) {
+          const d = session.diag();
+          diagText =
+            `No audio reaching the app. engine ${d.contextHz} Hz · ` +
+            `mic ${d.trackHz ?? '?'} Hz · track ${d.trackState}` +
+            `${d.trackMuted ? ' · MUTED by OS' : ''} · build ${__BUILD_TIME__}`;
+        } else {
+          diagText = '';
+        }
+      }, 1000);
     } catch (err) {
       micError =
         err instanceof DOMException && err.name === 'NotAllowedError'
@@ -107,6 +132,9 @@
 
   {#if micError}
     <p class="error">{micError}</p>
+  {/if}
+  {#if diagText}
+    <p class="error">{diagText}</p>
   {/if}
 
   <button class="mic-toggle" onclick={toggle} disabled={starting}>

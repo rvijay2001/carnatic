@@ -27,6 +27,13 @@ export interface PitchSample {
 
 export interface MicSession {
   stop(): void;
+  /** Live diagnostics for the silence watchdog. */
+  diag(): {
+    contextHz: number;
+    trackHz: number | undefined;
+    trackMuted: boolean;
+    trackState: MediaStreamTrackState;
+  };
 }
 
 const FFT_SIZE = 2048;
@@ -65,16 +72,32 @@ export async function startMic(
   if (ctx.state !== 'running') {
     await ctx.resume().catch(() => {});
   }
-  if (ctx.state !== 'running') {
-    for (const track of stream.getTracks()) track.stop();
-    setAudioSessionType('playback');
-    throw new Error(
-      `audio engine is '${ctx.state}' after mic permission — tap Start listening again`,
-    );
+
+  // WebKit iOS: a mic stream whose hardware rate differs from the context's
+  // sample rate produces pure silence. Rebuild the context at the mic's rate.
+  const track = stream.getAudioTracks()[0];
+  const trackHz = track.getSettings?.().sampleRate;
+  let captureCtx = ctx;
+  let ownsContext = false;
+  if (typeof trackHz === 'number' && trackHz > 0 && trackHz !== ctx.sampleRate) {
+    await closeAudioContext();
+    captureCtx = new AudioContext({ sampleRate: trackHz });
+    ownsContext = true;
+    await captureCtx.resume().catch(() => {});
   }
 
-  const source = ctx.createMediaStreamSource(stream);
-  const analyser = ctx.createAnalyser();
+  if (captureCtx.state !== 'running') {
+    for (const t of stream.getTracks()) t.stop();
+    if (ownsContext) await captureCtx.close().catch(() => {});
+    setAudioSessionType('playback');
+    throw new Error(
+      `audio engine is '${captureCtx.state}' after mic permission — tap Start listening again`,
+    );
+  }
+  const activeCtx = captureCtx;
+
+  const source = activeCtx.createMediaStreamSource(stream);
+  const analyser = activeCtx.createAnalyser();
   analyser.fftSize = FFT_SIZE;
   source.connect(analyser);
   // Not connected to destination: we listen, we don't monitor.
@@ -87,7 +110,7 @@ export async function startMic(
     let sumSquares = 0;
     for (const v of buffer) sumSquares += v * v;
     const rms = Math.sqrt(sumSquares / buffer.length);
-    const [hz, clarity] = detector.findPitch(buffer, ctx.sampleRate);
+    const [hz, clarity] = detector.findPitch(buffer, activeCtx.sampleRate);
     onSample({ hz, clarity, rms });
   }, POLL_MS);
 
@@ -95,8 +118,17 @@ export async function startMic(
     stop() {
       clearInterval(timer);
       source.disconnect();
-      for (const track of stream.getTracks()) track.stop();
+      for (const t of stream.getTracks()) t.stop();
+      if (ownsContext) void activeCtx.close().catch(() => {});
       setAudioSessionType('playback');
+    },
+    diag() {
+      return {
+        contextHz: activeCtx.sampleRate,
+        trackHz: track.getSettings?.().sampleRate,
+        trackMuted: track.muted,
+        trackState: track.readyState,
+      };
     },
   };
 }
