@@ -25,6 +25,7 @@
   const H = 220;
   const PAD_L = 44;
   const PAD_Y = 8;
+  const PAD_B = 18;
 
   const voiced = $derived(points.filter((p) => p.c !== null) as { t: number; c: number }[]);
 
@@ -50,8 +51,21 @@
   }
 
   function y(c: number): number {
-    return H - PAD_Y - ((c - yRange.min) / (yRange.max - yRange.min)) * (H - 2 * PAD_Y);
+    return (
+      H - PAD_B - ((c - yRange.min) / (yRange.max - yRange.min)) * (H - PAD_Y - PAD_B)
+    );
   }
+
+  /** Second ticks along the time axis — durations must be objective. */
+  const ticks = $derived.by(() => {
+    const span = xRange.end - xRange.start;
+    const step = span <= 6 ? 1 : span <= 15 ? 2 : 5;
+    const out: number[] = [];
+    for (let t = Math.ceil(xRange.start / step) * step; t <= xRange.end; t += step) {
+      out.push(t);
+    }
+    return out;
+  });
 
   /** Swara gridlines (with sthayi dots) covering the visible cents range. */
   const gridlines = $derived.by(() => {
@@ -115,6 +129,10 @@
       {line.label}
     </text>
   {/each}
+  {#each ticks as t (t)}
+    <line x1={x(t)} y1={PAD_Y} x2={x(t)} y2={H - PAD_B} class="tick" />
+    <text x={x(t)} y={H - 5} class="grid-label" text-anchor="middle">{t}s</text>
+  {/each}
   <path d={path} class="voice" />
 </svg>
 
@@ -143,6 +161,13 @@
   .grid.sa {
     stroke: var(--muted);
     stroke-width: 1.4;
+  }
+
+  .tick {
+    stroke: var(--border);
+    stroke-width: 1;
+    opacity: 0.5;
+    stroke-dasharray: 2 4;
   }
 
   .grid-label {

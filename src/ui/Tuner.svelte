@@ -8,7 +8,10 @@
 
   // Gates are deliberately gentle: beginner singing is soft, and the median
   // + EMA smoothing below absorbs the extra noise the lower gates admit.
-  const CLARITY_GATE = 0.87;
+  // Hysteresis: entering voicing is stricter than staying in it, so soft
+  // onsets register quickly (Mac-at-a-distance) without mid-note dropouts.
+  const CLARITY_ENTER = 0.8;
+  const CLARITY_STAY = 0.7;
   const RMS_GATE = 0.003;
   const HZ_MIN = 55;
   const HZ_MAX = 1400;
@@ -35,6 +38,7 @@
     cents: number;
     hz: number;
   } | null = $state(null);
+  let lastClarity = $state(0);
 
   let phraseActive = false;
   let phraseStartMs = 0;
@@ -67,8 +71,9 @@
     const now = performance.now();
     level = sample.rms;
 
+    lastClarity = sample.clarity;
     const voiced =
-      sample.clarity >= CLARITY_GATE &&
+      sample.clarity >= (singing ? CLARITY_STAY : CLARITY_ENTER) &&
       sample.rms >= RMS_GATE &&
       sample.hz >= HZ_MIN &&
       sample.hz <= HZ_MAX;
@@ -163,7 +168,7 @@
         <p class="numbers">
           {lastReading.label} · {lastReading.sthayi} ·
           {lastReading.cents >= 0 ? '+' : ''}{lastReading.cents.toFixed(0)}¢ ·
-          {lastReading.hz.toFixed(1)} Hz
+          {lastReading.hz.toFixed(1)} Hz · clarity {(lastClarity * 100).toFixed(0)}%
         </p>
       {/if}
     </div>
