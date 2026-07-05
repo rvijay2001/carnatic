@@ -1,26 +1,117 @@
 <script lang="ts">
   import { mayamalavagowla } from '../data/ragas';
   import { settings } from '../lib/settings';
-  import { nearestSwara, type SwaraReading } from '../lib/tuner';
-  import { sthayiName } from '../lib/pitch';
+  import { nearestSwara } from '../lib/tuner';
+  import { srutiToHz, sthayiName } from '../lib/pitch';
   import { startMic, type MicSession } from '../audio/mic';
+  import PitchTrace from './PitchTrace.svelte';
 
-  const CLARITY_GATE = 0.9;
-  const RMS_GATE = 0.01;
+  // Gates are deliberately gentle: beginner singing is soft, and the median
+  // + EMA smoothing below absorbs the extra noise the lower gates admit.
+  const CLARITY_GATE = 0.87;
+  const RMS_GATE = 0.003;
   const HZ_MIN = 55;
   const HZ_MAX = 1400;
-  /** Keep showing the last reading briefly through breaths/consonants. */
-  const HOLD_MS = 800;
+  /** Silence that ends a phrase and reveals its trace. */
+  const PHRASE_END_MS = 1000;
+  const MAX_POINTS = 600; // ~30 s at 50 ms/sample
+
+  interface Point {
+    t: number;
+    c: number | null;
+  }
 
   let session: MicSession | null = $state(null);
   let starting = $state(false);
   let micError = $state('');
-  let reading: SwaraReading | null = $state(null);
-  let smoothedCents = $state(0);
-  let lastVoicedAt = 0;
   let diagText = $state('');
+
+  let points: Point[] = $state([]);
+  let lastPhrase: Point[] | null = $state(null);
+  let singing = $state(false);
+  let level = $state(0);
+  let lastReading: {
+    label: string;
+    sthayi: string;
+    cents: number;
+    hz: number;
+  } | null = $state(null);
+
+  let phraseActive = false;
+  let phraseStartMs = 0;
+  let lastVoicedMs = 0;
   let lastAudioAt = 0;
+  let medianWindow: number[] = [];
+  let ema: number | null = null;
   let watchdog: ReturnType<typeof setInterval> | undefined;
+
+  function median(values: number[]): number {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  function endPhrase() {
+    if (!phraseActive) return;
+    phraseActive = false;
+    singing = false;
+    let end = points.length;
+    while (end > 0 && points[end - 1].c === null) end--;
+    lastPhrase = points.slice(0, end);
+    points = [];
+  }
+
+  function onSample(sample: { hz: number; clarity: number; rms: number }) {
+    const now = performance.now();
+    if (sample.rms > 0.0005) lastAudioAt = now;
+    level = sample.rms;
+
+    const voiced =
+      sample.clarity >= CLARITY_GATE &&
+      sample.rms >= RMS_GATE &&
+      sample.hz >= HZ_MIN &&
+      sample.hz <= HZ_MAX;
+
+    if (voiced) {
+      if (!phraseActive) {
+        phraseActive = true;
+        phraseStartMs = now;
+        medianWindow = [];
+        ema = null;
+        lastPhrase = null;
+        points = [];
+      }
+      singing = true;
+      lastVoicedMs = now;
+
+      const cents = 1200 * Math.log2(sample.hz / srutiToHz($settings.sruti));
+      medianWindow.push(cents);
+      if (medianWindow.length > 5) medianWindow.shift();
+      const med = median(medianWindow);
+      ema = ema === null ? med : ema * 0.7 + med * 0.3;
+
+      points.push({ t: (now - phraseStartMs) / 1000, c: ema });
+      if (points.length > MAX_POINTS) points.shift();
+      points = points;
+
+      const reading = nearestSwara(sample.hz, $settings.sruti, mayamalavagowla);
+      if (reading) {
+        lastReading = {
+          label: reading.label,
+          sthayi: sthayiName(reading.octaveOffset),
+          cents: reading.centsOff,
+          hz: sample.hz,
+        };
+      }
+    } else if (phraseActive) {
+      if (now - lastVoicedMs > PHRASE_END_MS) {
+        endPhrase();
+      } else {
+        points.push({ t: (now - phraseStartMs) / 1000, c: null });
+        points = points;
+        if (now - lastVoicedMs > 300) singing = false;
+      }
+    }
+  }
 
   function stopWatchdog() {
     if (watchdog) clearInterval(watchdog);
@@ -32,34 +123,15 @@
     if (session) {
       session.stop();
       session = null;
-      reading = null;
+      endPhrase();
+      singing = false;
       stopWatchdog();
       return;
     }
     starting = true;
     micError = '';
     try {
-      session = await startMic((sample) => {
-        if (sample.rms > 0.0005) lastAudioAt = performance.now();
-        const voiced =
-          sample.clarity >= CLARITY_GATE &&
-          sample.rms >= RMS_GATE &&
-          sample.hz >= HZ_MIN &&
-          sample.hz <= HZ_MAX;
-        if (voiced) {
-          const next = nearestSwara(sample.hz, $settings.sruti, mayamalavagowla);
-          if (next) {
-            smoothedCents =
-              reading && reading.swaraId === next.swaraId
-                ? smoothedCents * 0.6 + next.centsOff * 0.4
-                : next.centsOff;
-            reading = next;
-            lastVoicedAt = performance.now();
-          }
-        } else if (reading && performance.now() - lastVoicedAt > HOLD_MS) {
-          reading = null;
-        }
-      });
+      session = await startMic(onSample);
       // Silence watchdog: mic on but no signal at all → show diagnostics.
       lastAudioAt = performance.now();
       watchdog = setInterval(() => {
@@ -84,49 +156,49 @@
     }
   }
 
-  const centsClamped = $derived(Math.max(-50, Math.min(50, smoothedCents)));
-  const centsQuality = $derived(
-    Math.abs(smoothedCents) <= 10 ? 'good' : Math.abs(smoothedCents) <= 25 ? 'near' : 'far',
-  );
-  const octaveMark = $derived.by(() => {
-    const r = reading;
-    if (!r || r.octaveOffset === 0) return '';
-    return r.octaveOffset > 0 ? '˙' : '.';
-  });
+  const showLive = $derived($settings.tunerLiveTrace);
+  const pulseScale = $derived(Math.min(1, level * 25));
 </script>
 
 <section class="tuner" aria-label="Tuner">
   {#if session}
-    <div class="display" class:silent={!reading}>
-      {#if reading}
-        <div class="swara-name {centsQuality}">
-          {reading.label}<span class="octave">{octaveMark}</span>
+    <div class="display">
+      {#if showLive && (points.length > 0 || lastPhrase)}
+        <PitchTrace
+          points={points.length > 0 ? points : (lastPhrase ?? [])}
+          raga={mayamalavagowla}
+          live={points.length > 0}
+        />
+        <p class="caption">{points.length > 0 ? 'Live' : 'Your last phrase'}</p>
+      {:else if singing}
+        <div class="pulse-wrap" aria-label="Hearing you">
+          <div class="pulse" style="transform: scale({0.5 + pulseScale})"></div>
         </div>
-        <div class="sthayi">{sthayiName(reading.octaveOffset)}</div>
-        <div class="meter" aria-label="Cents deviation">
-          <div class="scale">
-            <span>-50¢</span><span>0</span><span>+50¢</span>
-          </div>
-          <div class="track">
-            <div class="center-line"></div>
-            <div
-              class="needle {centsQuality}"
-              style="left: {50 + centsClamped}%"
-            ></div>
-          </div>
-          <div class="cents-value {centsQuality}">
-            {smoothedCents >= 0 ? '+' : ''}{smoothedCents.toFixed(0)}¢
-          </div>
-        </div>
-        <div class="hz">{reading.hz.toFixed(1)} Hz</div>
+        <p class="caption">Hearing you — sing on, the trace appears when you pause</p>
+      {:else if lastPhrase}
+        <PitchTrace points={lastPhrase} raga={mayamalavagowla} />
+        <p class="caption">Your last phrase — how you held and moved between swaras</p>
       {:else}
-        <div class="listening">Listening… sing a swara</div>
+        <p class="listening">Listening… sing a swara</p>
       {/if}
+
+      {#if $settings.tunerNumbers && lastReading}
+        <p class="numbers">
+          {lastReading.label} · {lastReading.sthayi} ·
+          {lastReading.cents >= 0 ? '+' : ''}{lastReading.cents.toFixed(0)}¢ ·
+          {lastReading.hz.toFixed(1)} Hz
+        </p>
+      {/if}
+    </div>
+  {:else if lastPhrase}
+    <div class="display">
+      <PitchTrace points={lastPhrase} raga={mayamalavagowla} />
+      <p class="caption">Your last phrase</p>
     </div>
   {:else}
     <p class="explain">
-      Sing (or play a swara from the other device) and see which swara it is
-      and how many cents you are from the just-intonation target.
+      Sing, then pause — you'll see how your pitch moved across the swara
+      lines. No live meter by default: listen to your voice, not the screen.
     </p>
   {/if}
 
@@ -141,11 +213,32 @@
     {session ? 'Stop listening' : starting ? 'Starting…' : 'Start listening'}
   </button>
 
+  <div class="options">
+    <label>
+      <input
+        type="checkbox"
+        checked={$settings.tunerLiveTrace}
+        onchange={(e) =>
+          settings.update((s) => ({ ...s, tunerLiveTrace: e.currentTarget.checked }))}
+      />
+      Live trace while singing
+    </label>
+    <label>
+      <input
+        type="checkbox"
+        checked={$settings.tunerNumbers}
+        onchange={(e) =>
+          settings.update((s) => ({ ...s, tunerNumbers: e.currentTarget.checked }))}
+      />
+      Numbers (Hz / cents)
+    </label>
+  </div>
+
   <details class="calibration">
     <summary>Cross-device calibration check</summary>
     <ol>
       <li>On the other device, open Swaras and hold <strong>Sa</strong>.</li>
-      <li>Point this device's microphone at it.</li>
+      <li>Point this device's microphone at it (enable "Numbers" here).</li>
       <li>This tuner must read <strong>Sa 0¢</strong> (±3¢). Repeat the other
         way around. Any disagreement between devices is a bug — report it.</li>
     </ol>
@@ -164,97 +257,49 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.9rem;
-    padding: 1.5rem 1rem;
+    gap: 0.6rem;
+    padding: 1rem;
     border-radius: 0.9rem;
     border: 1px solid var(--border);
     background: var(--surface);
-    min-height: 14rem;
+    min-height: 15rem;
     justify-content: center;
   }
 
-  .swara-name {
-    font-size: 4rem;
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  .swara-name .octave {
-    font-size: 2rem;
-    vertical-align: super;
-  }
-
-  .sthayi {
-    color: var(--muted);
-    font-size: 0.85rem;
-    margin-top: -0.5rem;
-  }
-
-  .good { color: #57c26d; }
-  .near { color: var(--accent); }
-  .far { color: #d4646c; }
-
-  .meter {
-    width: 100%;
-    max-width: 22rem;
+  .pulse-wrap {
+    height: 8rem;
     display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
+    align-items: center;
+    justify-content: center;
   }
 
-  .scale {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.7rem;
+  .pulse {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.75;
+    transition: transform 90ms ease-out;
+  }
+
+  .caption {
+    margin: 0;
     color: var(--muted);
-  }
-
-  .track {
-    position: relative;
-    height: 0.9rem;
-    border-radius: 0.45rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    overflow: hidden;
-  }
-
-  .center-line {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: var(--muted);
-    opacity: 0.6;
-  }
-
-  .needle {
-    position: absolute;
-    top: 1px;
-    bottom: 1px;
-    width: 0.55rem;
-    margin-left: -0.275rem;
-    border-radius: 0.3rem;
-    background: currentColor;
-    transition: left 80ms linear;
-  }
-
-  .cents-value {
+    font-size: 0.8rem;
     text-align: center;
-    font-variant-numeric: tabular-nums;
-    font-size: 1.1rem;
-    font-weight: 600;
   }
 
-  .hz {
-    color: var(--muted);
-    font-size: 0.85rem;
+  .numbers {
+    margin: 0;
+    color: var(--text);
+    font-size: 0.95rem;
     font-variant-numeric: tabular-nums;
   }
 
   .listening {
     color: var(--muted);
     font-size: 1rem;
+    margin: 0;
   }
 
   .explain {
@@ -282,6 +327,20 @@
 
   .mic-toggle:disabled {
     opacity: 0.6;
+  }
+
+  .options {
+    display: flex;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+  }
+
+  .options label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--muted);
   }
 
   .calibration {

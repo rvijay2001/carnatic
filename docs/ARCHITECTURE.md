@@ -171,8 +171,14 @@ src/
 4. **Ear training** — mystery swara over the user's external drone; tap-to-answer or
    sing-back. (App may play a brief Sa reference before each round since it does not
    run its own drone.)
-5. **Tuner / Calibration** — live pitch in swara + cents; cross-device check
-   instructions.
+5. **Tuner / Calibration** — anti pitch-chasing design (user-confirmed failure mode,
+   2026-07): DEFAULT is no live feedback while singing — a subtle "hearing you" pulse
+   only; when the singer pauses (~1 s), the phrase's pitch trace appears (time vs.
+   cents, swaras as fixed JI gridlines with sthayi dots — drifting into a neighboring
+   swara reads as approaching its line, never a jarring re-anchor). Optional toggles:
+   live scrolling trace, numeric Hz/cents. Pitch stream is median(5) + EMA smoothed;
+   gates kept gentle for soft beginner voices. Cross-device check instructions live
+   on this screen.
 6. **Log** — automatic practice history, streaks, per-exercise metrics over time.
 7. **Settings** — sruti, tempo, tolerance, sustain live-meter toggle.
    **Sruti default: A# (6.5 kattai)** — the user's teachers have recommended A# or B;

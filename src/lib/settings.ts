@@ -9,12 +9,21 @@ import type { Sruti } from './pitch';
 export interface Settings {
   sruti: Sruti;
   showHz: boolean;
+  /** Tuner: scrolling live pitch trace while singing (off = review-after only). */
+  tunerLiveTrace: boolean;
+  /** Tuner: show numeric Hz/cents readouts. */
+  tunerNumbers: boolean;
 }
 
-/** Default sruti: A#2 — see ARCHITECTURE.md (teachers recommended A# or B). */
+/**
+ * Defaults: sruti A#2; tuner is "blind" — no live feedback while singing,
+ * trace shown after the phrase (anti pitch-chasing, user decision 2026-07).
+ */
 export const DEFAULT_SETTINGS: Settings = {
   sruti: { note: 'A#', octave: 2 },
   showHz: true,
+  tunerLiveTrace: false,
+  tunerNumbers: false,
 };
 
 const STORAGE_KEY = 'carnatic.settings.v1';
