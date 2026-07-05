@@ -5,6 +5,13 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Deployed to GitHub Pages at /carnatic/ — see docs/ARCHITECTURE.md.
 export default defineConfig({
   base: '/carnatic/',
+  define: {
+    // Shown in the app footer so we can tell which build a device runs
+    // (iOS service-worker update lag diagnosis — see docs/BACKLOG.md).
+    __BUILD_TIME__: JSON.stringify(
+      new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z',
+    ),
+  },
   plugins: [
     svelte(),
     VitePWA({

@@ -1,42 +1,32 @@
 <script lang="ts">
-  import { mayamalavagowla } from './data/ragas';
-  import { NOTE_NAMES, srutiToHz, swaraHz, ratioToCents, KATTAI } from './lib/pitch';
+  import { NOTE_NAMES, srutiToHz, KATTAI } from './lib/pitch';
   import type { NoteName } from './lib/pitch';
   import { settings } from './lib/settings';
-  import { startSwara, type Voice } from './audio/synth';
+  import SwaraBoard from './ui/SwaraBoard.svelte';
+  import Tuner from './ui/Tuner.svelte';
 
   const OCTAVES = [1, 2, 3, 4];
 
-  // One voice per active pointer, so Sa + Pa can sound together.
-  const voices = new Map<number, Voice>();
-  let activeSwaras = $state(new Set<string>());
-
-  function press(event: PointerEvent, swaraId: string, hz: number) {
-    event.preventDefault();
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    voices.get(event.pointerId)?.stop();
-    voices.set(event.pointerId, startSwara(hz));
-    activeSwaras.add(swaraId);
-    activeSwaras = new Set(activeSwaras);
-  }
-
-  function release(event: PointerEvent, swaraId: string) {
-    const voice = voices.get(event.pointerId);
-    if (voice) {
-      voice.stop();
-      voices.delete(event.pointerId);
-    }
-    activeSwaras.delete(swaraId);
-    activeSwaras = new Set(activeSwaras);
-  }
+  // In-app navigation only — never URL/hash routing (iOS PWAs re-prompt for
+  // mic permission when the URL hash changes; see ARCHITECTURE.md).
+  let view: 'swaras' | 'tuner' = $state('swaras');
 
   const saHz = $derived(srutiToHz($settings.sruti));
 </script>
 
 <main>
   <header>
-    <h1>Carnatic</h1>
-    <p class="subtitle">{mayamalavagowla.name} · swara reference</p>
+    <div class="title-row">
+      <h1>Carnatic</h1>
+      <nav>
+        <button class:current={view === 'swaras'} onclick={() => (view = 'swaras')}>
+          Swaras
+        </button>
+        <button class:current={view === 'tuner'} onclick={() => (view = 'tuner')}>
+          Tuner
+        </button>
+      </nav>
+    </div>
   </header>
 
   <section class="sruti" aria-label="Sruti">
@@ -73,27 +63,11 @@
     <div class="sa-hz">Sa = {saHz.toFixed(1)} Hz</div>
   </section>
 
-  <section class="board" aria-label="Swara board">
-    {#each mayamalavagowla.swaras as swara (swara.id)}
-      {@const hz = swaraHz($settings.sruti, swara.ratio)}
-      <button
-        class="swara"
-        class:active={activeSwaras.has(swara.id)}
-        onpointerdown={(e) => press(e, swara.id, hz)}
-        onpointerup={(e) => release(e, swara.id)}
-        onpointercancel={(e) => release(e, swara.id)}
-        oncontextmenu={(e) => e.preventDefault()}
-      >
-        <span class="label">{swara.label}</span>
-        <span class="name">{swara.name}</span>
-        {#if $settings.showHz}
-          <span class="detail">
-            {hz.toFixed(1)} Hz · {Math.round(ratioToCents(swara.ratio))}¢
-          </span>
-        {/if}
-      </button>
-    {/each}
-  </section>
+  {#if view === 'swaras'}
+    <SwaraBoard />
+  {:else}
+    <Tuner />
+  {/if}
 
   <footer>
     <label class="hz-toggle">
@@ -105,7 +79,7 @@
       />
       Show frequencies
     </label>
-    <p class="hint">Hold a swara to sustain it. Just intonation over your sruti.</p>
+    <p class="build">build {__BUILD_TIME__}</p>
   </footer>
 </main>
 
@@ -120,16 +94,38 @@
     min-height: 100dvh;
   }
 
+  .title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
   header h1 {
     font-size: 1.4rem;
     margin: 0;
     letter-spacing: 0.02em;
   }
 
-  .subtitle {
-    margin: 0.1rem 0 0;
-    color: var(--muted);
+  nav {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  nav button {
+    font: inherit;
     font-size: 0.9rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  nav button.current {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
   }
 
   .sruti {
@@ -164,65 +160,10 @@
     padding-bottom: 0.5rem;
   }
 
-  .board {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.6rem;
-    flex: 1;
-  }
-
-  .swara {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.15rem;
-    min-height: 5.2rem;
-    border-radius: 0.9rem;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
-    touch-action: none;
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 120ms ease, transform 120ms ease;
-  }
-
-  .swara.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-text);
-    transform: scale(0.985);
-  }
-
-  .swara .label {
-    font-size: 1.5rem;
-    font-weight: 600;
-  }
-
-  .swara .name {
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-
-  .swara.active .name,
-  .swara.active .detail {
-    color: var(--accent-text);
-    opacity: 0.85;
-  }
-
-  .swara .detail {
-    font-size: 0.72rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
   footer {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
     gap: 0.3rem;
   }
 
@@ -234,9 +175,11 @@
     color: var(--muted);
   }
 
-  .hint {
+  .build {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     color: var(--muted);
+    opacity: 0.7;
+    font-variant-numeric: tabular-nums;
   }
 </style>

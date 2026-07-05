@@ -28,7 +28,11 @@ Sarali Varisai). Runs identically on iPhone and Mac as an installable PWA.
 - Vite + Svelte + TypeScript
 - `vite-plugin-pwa` (service worker, manifest, offline caching)
 - Web Audio API directly (no audio framework); `pitchy` (McLeod/MPM) for pitch
-  detection, running in an AudioWorklet
+  detection. The tuner polls an AnalyserNode (simple, adequate for display);
+  exercise *scoring* should move to an AudioWorklet when built, for gap-free
+  sampling.
+- Navigation is in-app state only — never URL/hash routing: iOS standalone PWAs
+  re-prompt for mic permission when the URL hash changes (WebKit bug 215884).
 - Static hosting on **GitHub Pages** (decided 2026-07; repo will be public on the free
   plan — acceptable since no personal data ever leaves the device), deployed by a
   GitHub Actions workflow on push to `main`. Installed via Add to Home Screen (iOS) /
