@@ -15,6 +15,14 @@
   const CLARITY_ENTER = 0.8;
   const CLARITY_STAY = 0.7;
   const RMS_GATE = 0.0005;
+  // EXPERIMENT (revert tag: tuner-stable-1): reject steady machine hum
+  // (furnace) by requiring living-voice pitch jitter. A human voice always
+  // wobbles by several cents (breath pressure); machinery holds fractions
+  // of a cent. Level thresholds cannot separate them (macOS AGC makes
+  // post-ramp hum louder than pre-ramp voice — measured 2026-07).
+  const JITTER_WINDOW = 8; // ~0.4 s of samples
+  const JITTER_MIN_SAMPLES = 5; // ~0.25 s before voicing can begin
+  const JITTER_MIN_CENTS = 1.5;
   const HZ_MIN = 55;
   const HZ_MAX = 1400;
   /**
@@ -52,6 +60,13 @@
   let lastVoicedMs = 0;
   let medianWindow: number[] = [];
   let ema: number | null = null;
+  let jitterWindow: number[] = [];
+
+  function stddev(values: number[]): number {
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const varSum = values.reduce((a, b) => a + (b - mean) ** 2, 0);
+    return Math.sqrt(varSum / values.length);
+  }
 
   function median(values: number[]): number {
     const sorted = [...values].sort((a, b) => a - b);
@@ -80,11 +95,28 @@
     level = sample.rms;
 
     lastRaw = sample;
-    const voiced =
-      sample.clarity >= (singing ? CLARITY_STAY : CLARITY_ENTER) &&
+    const tonal =
+      sample.clarity >= CLARITY_STAY &&
       sample.rms >= RMS_GATE &&
       sample.hz >= HZ_MIN &&
       sample.hz <= HZ_MAX;
+
+    // Track raw pitch of tonal samples; a machine hum fills this window
+    // with near-identical values, a voice never does.
+    if (tonal) {
+      jitterWindow.push(1200 * Math.log2(sample.hz / srutiToHz($settings.sruti)));
+      if (jitterWindow.length > JITTER_WINDOW) jitterWindow.shift();
+    } else {
+      jitterWindow = [];
+    }
+    const livingVoice =
+      jitterWindow.length >= JITTER_MIN_SAMPLES &&
+      stddev(jitterWindow) >= JITTER_MIN_CENTS;
+
+    const voiced =
+      tonal &&
+      livingVoice &&
+      sample.clarity >= (singing ? CLARITY_STAY : CLARITY_ENTER);
 
     if (voiced) {
       if (!phraseActive) {
