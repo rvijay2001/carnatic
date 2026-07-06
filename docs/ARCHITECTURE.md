@@ -96,7 +96,13 @@ code:
 9. **Calibration screen as acceptance test.** The tuner screen shows live detected
    pitch. Cross-device check: play Sa on the Mac, point the iPhone at it (and vice
    versa) — both must agree within a few cents. Any disagreement is a bug, not a
-   tolerance.
+   tolerance. CONFIRMED CASE (2026-07): macOS WebKit ran the engine at 48 kHz while
+   the mic captured at 44.1 kHz, unresampled — all pitches read +147¢ sharp, and
+   `track.getSettings().sampleRate` did NOT reveal it. Fix: loopback self-calibration
+   (device plays its own Sa, listens raw, snaps measured/true ratio to a known
+   hardware ratio — see src/lib/calibrate.ts); the per-device correction factor is
+   stored in settings and applied inside the mic layer so every consumer reads true
+   pitch. Calibration itself must use raw (uncorrected) readings.
 
 ## Intonation model
 

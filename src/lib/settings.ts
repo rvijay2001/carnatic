@@ -13,6 +13,12 @@ export interface Settings {
   tunerLiveTrace: boolean;
   /** Tuner: show numeric Hz/cents readouts. */
   tunerNumbers: boolean;
+  /**
+   * Per-device capture-rate correction from loopback calibration: detected
+   * pitches are divided by this. 1 = healthy device. See lib/calibrate.ts.
+   */
+  pitchCorrection: number;
+  pitchCorrectionLabel: string;
 }
 
 /**
@@ -24,6 +30,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showHz: true,
   tunerLiveTrace: false,
   tunerNumbers: false,
+  pitchCorrection: 1,
+  pitchCorrectionLabel: '',
 };
 
 const STORAGE_KEY = 'carnatic.settings.v1';

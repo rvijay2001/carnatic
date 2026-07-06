@@ -10,6 +10,8 @@
  */
 
 import { PitchDetector } from 'pitchy';
+import { get } from 'svelte/store';
+import { settings } from '../lib/settings';
 import {
   closeAudioContext,
   ensureRunningContext,
@@ -41,7 +43,14 @@ const POLL_MS = 50;
 
 export async function startMic(
   onSample: (sample: PitchSample) => void,
+  opts?: {
+    /** Report uncorrected pitches — ONLY for the calibration routine. */
+    raw?: boolean;
+  },
 ): Promise<MicSession> {
+  // Per-device capture-rate correction (loopback calibration). Applied here
+  // so every consumer — tuner, future exercises — reads true pitch.
+  const correction = opts?.raw ? 1 : get(settings).pitchCorrection || 1;
   // Capture is incompatible with the 'playback' session category, and a
   // category change may not apply while a session is active — tear the
   // context down first, then recreate it under the new category.
@@ -117,7 +126,7 @@ export async function startMic(
     for (const v of buffer) sumSquares += v * v;
     const rms = Math.sqrt(sumSquares / buffer.length);
     const [hz, clarity] = detector.findPitch(buffer, activeCtx.sampleRate);
-    onSample({ hz, clarity, rms });
+    onSample({ hz: hz / correction, clarity, rms });
   }, POLL_MS);
 
   return {

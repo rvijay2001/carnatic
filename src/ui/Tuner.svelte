@@ -4,6 +4,8 @@
   import { nearestSwara } from '../lib/tuner';
   import { srutiToHz, sthayiName } from '../lib/pitch';
   import { startMic, type MicSession } from '../audio/mic';
+  import { startSwara } from '../audio/synth';
+  import { correctionCents, inferCorrection } from '../lib/calibrate';
   import PitchTrace from './PitchTrace.svelte';
 
   // Voicing is decided by CLARITY, not loudness: macOS Safari ignores
@@ -186,6 +188,72 @@
 
   const showLive = $derived($settings.tunerLiveTrace);
   const pulseScale = $derived(Math.min(1, level * 25));
+
+  let calibrating = $state(false);
+  let calMsg = $state('');
+
+  /**
+   * Loopback self-calibration: play our own Sa, listen with RAW (uncorrected)
+   * readings, and snap the measured/true ratio to a known hardware ratio.
+   * Detects the WebKit capture-rate mismatch (Mac read +147¢, 2026-07).
+   */
+  async function calibrate() {
+    if (session) {
+      const s = session;
+      session = null;
+      s.stop();
+      endPhrase();
+    }
+    calibrating = true;
+    calMsg = 'Playing Sa and listening to it…';
+    const collected: number[] = [];
+    let sess: MicSession | null = null;
+    let voice: ReturnType<typeof startSwara> | null = null;
+    try {
+      sess = await startMic(
+        (s) => {
+          if (s.clarity >= 0.85 && s.rms >= 0.0005 && s.hz > 40 && s.hz < 3000) {
+            collected.push(s.hz);
+          }
+        },
+        { raw: true },
+      );
+      voice = startSwara(srutiToHz($settings.sruti));
+      await new Promise((r) => setTimeout(r, 1800));
+    } catch (err) {
+      calMsg = `Calibration failed: ${err instanceof Error ? err.message : err}`;
+      calibrating = false;
+      voice?.stop();
+      sess?.stop();
+      return;
+    }
+    voice.stop();
+    sess.stop();
+
+    // Drop the first ~0.6 s (gain ramp, attack); judge the settled tone.
+    const settled = collected.slice(Math.min(12, Math.floor(collected.length / 2)));
+    if (settled.length < 8) {
+      calMsg =
+        'Could not hear the tone — raise the volume, unplug headphones, and try again.';
+    } else {
+      const measured = median(settled);
+      const corr = inferCorrection(measured, srutiToHz($settings.sruti));
+      if (!corr) {
+        calMsg = `Ambiguous reading (${measured.toFixed(1)} Hz) — try again in a quieter moment.`;
+      } else {
+        settings.update((s) => ({
+          ...s,
+          pitchCorrection: corr.factor,
+          pitchCorrectionLabel: corr.label,
+        }));
+        calMsg =
+          corr.factor === 1
+            ? 'This device reads pitch accurately — no correction needed.'
+            : `Mismatch found (${corr.label}) — readings now corrected by ${(-correctionCents(corr.factor)).toFixed(0)}¢.`;
+      }
+    }
+    calibrating = false;
+  }
 </script>
 
 <section class="tuner" aria-label="Tuner">
@@ -263,13 +331,36 @@
   </div>
 
   <details class="calibration">
-    <summary>Cross-device calibration check</summary>
-    <ol>
-      <li>On the other device, open Swaras and hold <strong>Sa</strong>.</li>
-      <li>Point this device's microphone at it (enable "Numbers" here).</li>
-      <li>This tuner must read <strong>Sa 0¢</strong> (±3¢). Repeat the other
-        way around. Any disagreement between devices is a bug — report it.</li>
-    </ol>
+    <summary>Calibration</summary>
+    <div class="cal-body">
+      <button class="cal-btn" onclick={calibrate} disabled={calibrating || starting}>
+        {calibrating ? 'Calibrating…' : 'Auto-calibrate this device (plays Sa)'}
+      </button>
+      {#if calMsg}
+        <p class="cal-msg">{calMsg}</p>
+      {/if}
+      {#if $settings.pitchCorrection !== 1}
+        <p class="cal-msg">
+          Active correction: {(-correctionCents($settings.pitchCorrection)).toFixed(0)}¢
+          ({$settings.pitchCorrectionLabel})
+          <button
+            class="cal-clear"
+            onclick={() =>
+              settings.update((s) => ({
+                ...s,
+                pitchCorrection: 1,
+                pitchCorrectionLabel: '',
+              }))}
+          >
+            clear
+          </button>
+        </p>
+      {/if}
+      <p class="cal-msg">
+        Cross-device check: hold Sa on the other device's Swaras board; this
+        tuner (Numbers on) must read Sa within a few cents.
+      </p>
+    </div>
   </details>
 </section>
 
@@ -374,8 +465,43 @@
     cursor: pointer;
   }
 
-  .calibration ol {
-    margin: 0.5rem 0 0;
-    padding-left: 1.2rem;
+  .cal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .cal-btn {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    align-self: flex-start;
+  }
+
+  .cal-btn:disabled {
+    opacity: 0.6;
+  }
+
+  .cal-msg {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+
+  .cal-clear {
+    font: inherit;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
+    margin-left: 0.4rem;
+    border-radius: 0.4rem;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
   }
 </style>
