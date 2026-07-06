@@ -40,3 +40,24 @@ describe('inferCorrection', () => {
     expect(correctionCents(SHARP)).toBeCloseTo(147.1, 0);
   });
 });
+
+describe('empiricalCorrection', () => {
+  it("accepts the Mac's measured +89¢ offset (490.7 Hz for 466.16)", async () => {
+    const { empiricalCorrection } = await import('./calibrate');
+    const corr = empiricalCorrection(490.7, 466.164)!;
+    expect(corr.factor).toBeCloseTo(490.7 / 466.164, 6);
+    expect(corr.label).toContain('+89');
+  });
+
+  it('folds octaves before measuring', async () => {
+    const { empiricalCorrection } = await import('./calibrate');
+    const corr = empiricalCorrection(2 * 490.7, 466.164)!;
+    expect(corr.factor).toBeCloseTo(490.7 / 466.164, 6);
+  });
+
+  it('rejects offsets beyond 250¢ after folding', async () => {
+    const { empiricalCorrection } = await import('./calibrate');
+    expect(empiricalCorrection(SA * 2 ** (300 / 1200), SA)).toBeNull();
+    expect(empiricalCorrection(0, SA)).toBeNull();
+  });
+});

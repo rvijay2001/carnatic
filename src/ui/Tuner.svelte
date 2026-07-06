@@ -5,7 +5,11 @@
   import { srutiToHz, sthayiName } from '../lib/pitch';
   import { startMic, type MicSession } from '../audio/mic';
   import { startSwara } from '../audio/synth';
-  import { correctionCents, inferCorrection } from '../lib/calibrate';
+  import {
+    correctionCents,
+    empiricalCorrection,
+    inferCorrection,
+  } from '../lib/calibrate';
   import PitchTrace from './PitchTrace.svelte';
 
   // Voicing is decided by CLARITY, not loudness: macOS Safari ignores
@@ -261,30 +265,44 @@
       return;
     }
     voice?.stop();
+    const rates = sess.diag();
     sess.stop();
+    const ratesText = `engine ${rates.contextHz} Hz, mic reports ${rates.trackHz ?? 'unknown'}`;
 
     // Drop the first ~0.6 s (gain ramp, attack); judge the settled tone.
-    const settled = collected.slice(Math.min(12, Math.floor(collected.length / 2)));
-    if (settled.length < 8) {
+    const settled = collected
+      .slice(Math.min(12, Math.floor(collected.length / 2)))
+      .sort((a, b) => a - b);
+    if (settled.length < 15) {
       calMsg =
-        source === 'self'
+        (source === 'self'
           ? 'Could not hear the tone — raise the volume, unplug headphones, and try again.'
-          : 'Could not hear the other device — bring it closer, start its tone first, and try again.';
+          : 'Could not hear the other device — bring it closer, start its tone first, and try again.') +
+        ` (${ratesText})`;
     } else {
-      const measured = median(settled);
-      const corr = inferCorrection(measured, toneHz);
-      if (!corr) {
-        calMsg = `Unreliable reading (${measured.toFixed(1)} Hz, expected ${toneHz.toFixed(1)}) — the tone may be glitching; try the other-device method.`;
+      const p10 = settled[Math.floor(settled.length * 0.1)];
+      const p90 = settled[Math.floor(settled.length * 0.9)];
+      const measured = settled[Math.floor(settled.length / 2)];
+      const spreadCents = 1200 * Math.log2(p90 / p10);
+      if (spreadCents > 15) {
+        calMsg = `Reading unstable (${p10.toFixed(1)}–${p90.toFixed(1)} Hz, median ${measured.toFixed(1)}, expected ${toneHz.toFixed(1)}; ${ratesText}) — try the other-device method or a quieter moment.`;
       } else {
-        settings.update((s) => ({
-          ...s,
-          pitchCorrection: corr.factor,
-          pitchCorrectionLabel: corr.label,
-        }));
-        calMsg =
-          corr.factor === 1
-            ? 'This device reads pitch accurately — no correction needed.'
-            : `Mismatch found (${corr.label}) — readings now corrected by ${(-correctionCents(corr.factor)).toFixed(0)}¢.`;
+        // Prefer a known rate-pair label; accept a tight empirical offset.
+        const corr =
+          inferCorrection(measured, toneHz) ?? empiricalCorrection(measured, toneHz);
+        if (!corr) {
+          calMsg = `Offset too large to trust (median ${measured.toFixed(1)} Hz vs ${toneHz.toFixed(1)}; ${ratesText}).`;
+        } else {
+          settings.update((s) => ({
+            ...s,
+            pitchCorrection: corr.factor,
+            pitchCorrectionLabel: corr.label,
+          }));
+          calMsg =
+            corr.factor === 1
+              ? 'This device reads pitch accurately — no correction needed.'
+              : `Consistent offset found (${corr.label}; ${ratesText}) — readings now corrected by ${(-correctionCents(corr.factor)).toFixed(0)}¢.`;
+        }
       }
     }
     calibrating = false;

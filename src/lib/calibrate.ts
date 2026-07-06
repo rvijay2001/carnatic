@@ -24,6 +24,14 @@ const CANDIDATES: Correction[] = [
 
 const TOLERANCE_CENTS = 25;
 
+/** Fold a measured/expected ratio into [1/√2, √2) — removes octave errors. */
+export function foldRatio(measuredHz: number, expectedHz: number): number {
+  let ratio = measuredHz / expectedHz;
+  while (ratio > Math.SQRT2) ratio /= 2;
+  while (ratio < Math.SQRT1_2) ratio *= 2;
+  return ratio;
+}
+
 /**
  * Infer the correction from a loopback measurement. Octave errors in the
  * measurement (harmonics) are folded away first.
@@ -33,9 +41,7 @@ export function inferCorrection(
   expectedHz: number,
 ): Correction | null {
   if (!(measuredHz > 0) || !(expectedHz > 0)) return null;
-  let ratio = measuredHz / expectedHz;
-  while (ratio > Math.SQRT2) ratio /= 2;
-  while (ratio < Math.SQRT1_2) ratio *= 2;
+  const ratio = foldRatio(measuredHz, expectedHz);
 
   let best: Correction | null = null;
   let bestCents = Infinity;
@@ -51,4 +57,25 @@ export function inferCorrection(
 
 export function correctionCents(factor: number): number {
   return 1200 * Math.log2(factor);
+}
+
+/**
+ * Accept a MEASURED constant offset that does not match any known rate pair
+ * — valid only when the caller has verified the readings are tightly
+ * clustered (a consistent multiplier is a resampling error regardless of
+ * whether we can name the rate pair; confirmed on a Mac reading +89¢ at
+ * both 116 Hz and 466 Hz, 2026-07).
+ */
+export function empiricalCorrection(
+  measuredHz: number,
+  expectedHz: number,
+): Correction | null {
+  if (!(measuredHz > 0) || !(expectedHz > 0)) return null;
+  const ratio = foldRatio(measuredHz, expectedHz);
+  const cents = 1200 * Math.log2(ratio);
+  if (!Number.isFinite(cents) || Math.abs(cents) > 250) return null;
+  return {
+    factor: ratio,
+    label: `measured offset of ${cents >= 0 ? '+' : ''}${cents.toFixed(0)}¢`,
+  };
 }
