@@ -36,6 +36,16 @@
     device; Capacitor wrapper is the escape hatch (native AVAudioSession
     control with `.playback` + `.mixWithOthers`).
 
+### 3. Mac capture path reads pitch ×1.0526 (+89¢) — mechanism unidentified
+- Measured 2026-07: Mac hears 490.7 Hz when 466.16 Hz is played (any source,
+  capture-only or loopback); same ratio at 116 Hz (duet singing). Matches no
+  standard sample-rate pair (48/44.1 would be +147¢). Mac OUTPUT is accurate
+  (iPhone hears its tone correctly).
+- Worked around by empirical calibration (stored per-device factor), but the
+  root mechanism is unknown. Next: check engine/mic rates in the calibration
+  message; check Audio MIDI Setup input device rate; test with an external
+  mic; consider filing a WebKit bug with a minimal repro.
+
 ## Ideas / later
 - Nicer swara timbre (sampled or Karplus-Strong voice).
 - Wake lock during practice sessions (Screen Wake Lock API).
