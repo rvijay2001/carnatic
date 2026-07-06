@@ -191,13 +191,39 @@
 
   let calibrating = $state(false);
   let calMsg = $state('');
+  let tonePlaying = $state(false);
+  let toneVoice: ReturnType<typeof startSwara> | null = null;
+  let toneTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Steady reference tone (sruti × 4) for the other device to calibrate against. */
+  function toggleCalTone() {
+    if (tonePlaying) {
+      clearTimeout(toneTimer);
+      toneVoice?.stop();
+      toneVoice = null;
+      tonePlaying = false;
+      return;
+    }
+    toneVoice = startSwara(srutiToHz($settings.sruti) * 4);
+    tonePlaying = true;
+    toneTimer = setTimeout(() => {
+      toneVoice?.stop();
+      toneVoice = null;
+      tonePlaying = false;
+    }, 10000);
+  }
 
   /**
-   * Loopback self-calibration: play our own Sa, listen with RAW (uncorrected)
-   * readings, and snap the measured/true ratio to a known hardware ratio.
-   * Detects the WebKit capture-rate mismatch (Mac read +147¢, 2026-07).
+   * Calibration: listen with RAW (uncorrected) readings and snap the
+   * measured/true ratio to a known hardware ratio (WebKit capture-rate
+   * mismatch — Mac read +147¢, 2026-07).
+   *
+   * 'self': play our own tone and listen (loopback). Works where duplex
+   * audio is clean (iPhone). On the Mac the clock mismatch makes duplex
+   * playback stutter, corrupting the measurement — use 'remote' there:
+   * the OTHER (healthy) device plays the tone, this one only listens.
    */
-  async function calibrate() {
+  async function calibrate(source: 'self' | 'remote') {
     if (session) {
       const s = session;
       session = null;
@@ -205,7 +231,10 @@
       endPhrase();
     }
     calibrating = true;
-    calMsg = 'Playing a high Sa and listening to it…';
+    calMsg =
+      source === 'self'
+        ? 'Playing a high Sa and listening to it…'
+        : 'Listening for the other device’s tone…';
     // Two octaves above the sruti: small speakers cannot reproduce a 116 Hz
     // fundamental (they emit only its harmonics, scattering the detector),
     // but ~466 Hz comes through cleanly. inferCorrection folds octaves.
@@ -222,8 +251,8 @@
         },
         { raw: true },
       );
-      voice = startSwara(toneHz);
-      await new Promise((r) => setTimeout(r, 2000));
+      if (source === 'self') voice = startSwara(toneHz);
+      await new Promise((r) => setTimeout(r, source === 'self' ? 2000 : 3500));
     } catch (err) {
       calMsg = `Calibration failed: ${err instanceof Error ? err.message : err}`;
       calibrating = false;
@@ -231,19 +260,21 @@
       sess?.stop();
       return;
     }
-    voice.stop();
+    voice?.stop();
     sess.stop();
 
     // Drop the first ~0.6 s (gain ramp, attack); judge the settled tone.
     const settled = collected.slice(Math.min(12, Math.floor(collected.length / 2)));
     if (settled.length < 8) {
       calMsg =
-        'Could not hear the tone — raise the volume, unplug headphones, and try again.';
+        source === 'self'
+          ? 'Could not hear the tone — raise the volume, unplug headphones, and try again.'
+          : 'Could not hear the other device — bring it closer, start its tone first, and try again.';
     } else {
       const measured = median(settled);
       const corr = inferCorrection(measured, toneHz);
       if (!corr) {
-        calMsg = `Ambiguous reading (${measured.toFixed(1)} Hz) — try again in a quieter moment.`;
+        calMsg = `Unreliable reading (${measured.toFixed(1)} Hz, expected ${toneHz.toFixed(1)}) — the tone may be glitching; try the other-device method.`;
       } else {
         settings.update((s) => ({
           ...s,
@@ -337,8 +368,26 @@
   <details class="calibration">
     <summary>Calibration</summary>
     <div class="cal-body">
-      <button class="cal-btn" onclick={calibrate} disabled={calibrating || starting}>
-        {calibrating ? 'Calibrating…' : 'Auto-calibrate this device (plays Sa)'}
+      <button
+        class="cal-btn"
+        onclick={() => calibrate('self')}
+        disabled={calibrating || starting || tonePlaying}
+      >
+        {calibrating ? 'Calibrating…' : 'Auto-calibrate (this device plays and listens)'}
+      </button>
+      <p class="cal-msg">
+        If the tone stutters on this device (Mac): put the other device close
+        by, tap "Play calibration tone" there, then here:
+      </p>
+      <button
+        class="cal-btn"
+        onclick={() => calibrate('remote')}
+        disabled={calibrating || starting || tonePlaying}
+      >
+        Calibrate by listening to the other device
+      </button>
+      <button class="cal-btn" onclick={toggleCalTone} disabled={calibrating}>
+        {tonePlaying ? 'Stop tone' : 'Play calibration tone (10 s)'}
       </button>
       {#if calMsg}
         <p class="cal-msg">{calMsg}</p>
