@@ -103,6 +103,10 @@ code:
    hardware ratio — see src/lib/calibrate.ts); the per-device correction factor is
    stored in settings and applied inside the mic layer so every consumer reads true
    pitch. Calibration itself must use raw (uncorrected) readings.
+   PHYSICS NOTE (2026-07): phone/laptop speakers cannot reproduce a ~116 Hz
+   fundamental — they emit only its harmonics, which scatters the pitch detector.
+   Any speaker-played reference for calibration or cross-device checks must be
+   ≥ ~230 Hz (calibration plays sruti × 4; cross-device checks use tara Sa).
 
 ## Intonation model
 

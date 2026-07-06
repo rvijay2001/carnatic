@@ -205,21 +205,25 @@
       endPhrase();
     }
     calibrating = true;
-    calMsg = 'Playing Sa and listening to it…';
+    calMsg = 'Playing a high Sa and listening to it…';
+    // Two octaves above the sruti: small speakers cannot reproduce a 116 Hz
+    // fundamental (they emit only its harmonics, scattering the detector),
+    // but ~466 Hz comes through cleanly. inferCorrection folds octaves.
+    const toneHz = srutiToHz($settings.sruti) * 4;
     const collected: number[] = [];
     let sess: MicSession | null = null;
     let voice: ReturnType<typeof startSwara> | null = null;
     try {
       sess = await startMic(
         (s) => {
-          if (s.clarity >= 0.85 && s.rms >= 0.0005 && s.hz > 40 && s.hz < 3000) {
+          if (s.clarity >= 0.75 && s.rms >= 0.0005 && s.hz > 100 && s.hz < 4000) {
             collected.push(s.hz);
           }
         },
         { raw: true },
       );
-      voice = startSwara(srutiToHz($settings.sruti));
-      await new Promise((r) => setTimeout(r, 1800));
+      voice = startSwara(toneHz);
+      await new Promise((r) => setTimeout(r, 2000));
     } catch (err) {
       calMsg = `Calibration failed: ${err instanceof Error ? err.message : err}`;
       calibrating = false;
@@ -237,7 +241,7 @@
         'Could not hear the tone — raise the volume, unplug headphones, and try again.';
     } else {
       const measured = median(settled);
-      const corr = inferCorrection(measured, srutiToHz($settings.sruti));
+      const corr = inferCorrection(measured, toneHz);
       if (!corr) {
         calMsg = `Ambiguous reading (${measured.toFixed(1)} Hz) — try again in a quieter moment.`;
       } else {
@@ -357,8 +361,9 @@
         </p>
       {/if}
       <p class="cal-msg">
-        Cross-device check: hold Sa on the other device's Swaras board; this
-        tuner (Numbers on) must read Sa within a few cents.
+        Cross-device check: hold <strong>Ṡa</strong> (tara Sa) on the other
+        device's Swaras board — small speakers can't produce the low Sa — and
+        this tuner (Numbers on) must read Sa within a few cents.
       </p>
     </div>
   </details>
