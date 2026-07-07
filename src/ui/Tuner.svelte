@@ -5,11 +5,7 @@
   import { srutiToHz, sthayiName } from '../lib/pitch';
   import { startMic, type MicSession } from '../audio/mic';
   import { startSwara } from '../audio/synth';
-  import {
-    correctionCents,
-    empiricalCorrection,
-    inferCorrection,
-  } from '../lib/calibrate';
+  import { correctionCents, inferCorrection } from '../lib/calibrate';
   import PitchTrace from './PitchTrace.svelte';
 
   // Voicing is decided by CLARITY, not loudness: macOS Safari ignores
@@ -193,6 +189,16 @@
   const showLive = $derived($settings.tunerLiveTrace);
   const pulseScale = $derived(Math.min(1, level * 25));
 
+  // Safari on macOS corrupts captured audio (glitchy pipeline drops chunks,
+  // shifting pitch ~+89¢ — WebKit bug 253952 class; confirmed by a Chrome
+  // control experiment on the same machine, 2026-07). Warn and point to
+  // Chrome; there is no Safari setting or clean code workaround.
+  const isMacSafari =
+    typeof navigator !== 'undefined' &&
+    /Macintosh/.test(navigator.userAgent) &&
+    /Safari\//.test(navigator.userAgent) &&
+    !/Chrome|Chromium|CriOS|Edg/.test(navigator.userAgent);
+
   let calibrating = $state(false);
   let calMsg = $state('');
   let tonePlaying = $state(false);
@@ -287,11 +293,10 @@
       if (spreadCents > 15) {
         calMsg = `Reading unstable (${p10.toFixed(1)}–${p90.toFixed(1)} Hz, median ${measured.toFixed(1)}, expected ${toneHz.toFixed(1)}; ${ratesText}) — try the other-device method or a quieter moment.`;
       } else {
-        // Prefer a known rate-pair label; accept a tight empirical offset.
-        const corr =
-          inferCorrection(measured, toneHz) ?? empiricalCorrection(measured, toneHz);
+        // Only exact, physically-explainable rate pairs are ever corrected.
+        const corr = inferCorrection(measured, toneHz);
         if (!corr) {
-          calMsg = `Offset too large to trust (median ${measured.toFixed(1)} Hz vs ${toneHz.toFixed(1)}; ${ratesText}).`;
+          calMsg = `Offset matches no known hardware configuration (median ${measured.toFixed(1)} Hz vs ${toneHz.toFixed(1)}; ${ratesText}) — this signature means the browser is corrupting captured audio${isMacSafari ? ': use Chrome on this Mac for microphone features' : ''}.`;
         } else {
           settings.update((s) => ({
             ...s,
@@ -356,6 +361,14 @@
 
   {#if micError}
     <p class="error">{micError}</p>
+  {/if}
+
+  {#if isMacSafari}
+    <p class="error">
+      Safari on macOS corrupts microphone audio (pitch reads ~+89¢ sharp and
+      unstable — a WebKit defect). Use Chrome on this Mac for the tuner and
+      singing exercises; playback here is unaffected.
+    </p>
   {/if}
 
   <button class="mic-toggle" onclick={toggle} disabled={starting}>

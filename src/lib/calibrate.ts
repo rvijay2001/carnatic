@@ -59,23 +59,8 @@ export function correctionCents(factor: number): number {
   return 1200 * Math.log2(factor);
 }
 
-/**
- * Accept a MEASURED constant offset that does not match any known rate pair
- * — valid only when the caller has verified the readings are tightly
- * clustered (a consistent multiplier is a resampling error regardless of
- * whether we can name the rate pair; confirmed on a Mac reading +89¢ at
- * both 116 Hz and 466 Hz, 2026-07).
- */
-export function empiricalCorrection(
-  measuredHz: number,
-  expectedHz: number,
-): Correction | null {
-  if (!(measuredHz > 0) || !(expectedHz > 0)) return null;
-  const ratio = foldRatio(measuredHz, expectedHz);
-  const cents = 1200 * Math.log2(ratio);
-  if (!Number.isFinite(cents) || Math.abs(cents) > 250) return null;
-  return {
-    factor: ratio,
-    label: `measured offset of ${cents >= 0 ? '+' : ''}${cents.toFixed(0)}¢`,
-  };
-}
+// NOTE: an "empirical correction" (accepting any tightly-clustered measured
+// offset) was tried and removed (2026-07): the macOS Safari offset turned out
+// to be capture-pipeline GLITCHING (dropped chunks — WebKit bug 253952 class),
+// which corrupts audio and cannot be fixed by a multiplier. Corrections are
+// only ever applied for exact, physically-explainable rate pairs above.

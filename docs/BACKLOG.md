@@ -36,15 +36,20 @@
     device; Capacitor wrapper is the escape hatch (native AVAudioSession
     control with `.playback` + `.mixWithOthers`).
 
-### 3. Mac capture path reads pitch ×1.0526 (+89¢) — mechanism unidentified
-- Measured 2026-07: Mac hears 490.7 Hz when 466.16 Hz is played (any source,
-  capture-only or loopback); same ratio at 116 Hz (duet singing). Matches no
-  standard sample-rate pair (48/44.1 would be +147¢). Mac OUTPUT is accurate
-  (iPhone hears its tone correctly).
-- Worked around by empirical calibration (stored per-device factor), but the
-  root mechanism is unknown. Next: check engine/mic rates in the calibration
-  message; check Audio MIDI Setup input device rate; test with an external
-  mic; consider filing a WebKit bug with a minimal repro.
+### 3. [ROOT CAUSE FOUND] macOS Safari corrupts captured audio (+89¢, unstable)
+- Diagnosis journey: Mac heard 490.7 Hz for a true 466.16 Hz tone (any source);
+  same ×1.0526 (= 20/19) ratio at 116 Hz; readings unstable; simultaneous
+  playback stuttered. Audio MIDI rates, mic mode, and input device all ruled
+  out by user testing. **Control experiment settled it: Chrome on the same Mac
+  reads identically to the iPhone** → WebKit capture-pipeline defect (dropped/
+  misaligned chunks; same class as WebKit bug 253952). Empirical multiplier
+  workaround was tried and REMOVED — glitched audio can't be fixed by scaling.
+- Resolution: use Chrome on the Mac for microphone features (user accepted);
+  the Tuner warns when running under macOS Safari.
+- Optional follow-ups: file the WebKit bug (draft in docs/webkit-bug-draft.md);
+  if ever needed, the untested code-side gamble is echoCancellation:true on
+  Mac capture (Apple's voice-processing path may not glitch, but applies
+  call-tuned processing to singing).
 
 ## Ideas / later
 - Nicer swara timbre (sampled or Karplus-Strong voice).

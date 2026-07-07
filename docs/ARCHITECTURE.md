@@ -96,13 +96,19 @@ code:
 9. **Calibration screen as acceptance test.** The tuner screen shows live detected
    pitch. Cross-device check: play Sa on the Mac, point the iPhone at it (and vice
    versa) — both must agree within a few cents. Any disagreement is a bug, not a
-   tolerance. CONFIRMED CASE (2026-07): macOS WebKit ran the engine at 48 kHz while
-   the mic captured at 44.1 kHz, unresampled — all pitches read +147¢ sharp, and
-   `track.getSettings().sampleRate` did NOT reveal it. Fix: loopback self-calibration
-   (device plays its own Sa, listens raw, snaps measured/true ratio to a known
-   hardware ratio — see src/lib/calibrate.ts); the per-device correction factor is
-   stored in settings and applied inside the mic layer so every consumer reads true
-   pitch. Calibration itself must use raw (uncorrected) readings.
+   tolerance. RESOLVED CASE (2026-07): **Safari on macOS corrupts captured audio** —
+   the capture pipeline drops/misaligns chunks (WebKit bug 253952 class), which
+   (a) stutters simultaneous playback, (b) makes instantaneous pitch unstable, and
+   (c) compresses time by ~20/19 so median pitch reads ~+89¢ sharp. Proven by a
+   control experiment: Chrome on the SAME Mac reads identically to the iPhone.
+   No Safari setting or OS audio setting fixes it (all tested). RULE: on macOS,
+   microphone features require a Chromium-based browser; the UI warns when running
+   under macOS Safari. Do NOT compensate with measured "empirical" multipliers —
+   glitched audio cannot be fixed by scaling (tried and removed). The calibration
+   harness (self-loopback ≥230 Hz tone, remote-tone method, stability check,
+   snap-to-known-rate-pairs only — src/lib/calibrate.ts) remains as VERIFICATION
+   tooling; corrections are stored only for exact physical rate pairs, with raw
+   (uncorrected) readings used during calibration itself.
    PHYSICS NOTE (2026-07): phone/laptop speakers cannot reproduce a ~116 Hz
    fundamental — they emit only its harmonics, which scatters the pitch detector.
    Any speaker-played reference for calibration or cross-device checks must be
